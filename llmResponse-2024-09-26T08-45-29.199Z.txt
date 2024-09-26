@@ -1,0 +1,216 @@
+```js
+// App.js
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, Clipboard } from 'react-native';
+import { Audio } from 'expo-av';
+import axios from 'axios';
+import * as Haptics from 'expo-haptics';
+
+const API_URL = 'http://apihub.p.appply.xyz:3300/chatgpt';
+
+const App = () => {
+  const [recording, setRecording] = useState();
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcribedText, setTranscribedText] = useState('');
+  const [timer, setTimer] = useState(0);
+  const [waveform, setWaveform] = useState([]);
+  const intervalRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isRecording) {
+      intervalRef.current = setInterval(() => {
+        setTimer((prevTimer) => {
+          if (prevTimer >= 60) {
+            stopRecording();
+            return 60;
+          }
+          return prevTimer + 1;
+        });
+        // Simulate waveform data
+        setWaveform(Array(20).fill().map(() => Math.random()));
+      }, 1000);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    }
+  }, [isRecording]);
+
+  async function startRecording() {
+    try {
+      await Audio.requestPermissionsAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      setRecording(recording);
+      setIsRecording(true);
+      setTimer(0);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (err) {
+      console.error('Failed to start recording', err);
+    }
+  }
+
+  async function stopRecording() {
+    setIsRecording(false);
+    setTimer(0);
+    setWaveform([]);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    if (!recording) {
+      return;
+    }
+
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      console.log('Recording stopped and stored at', uri);
+      
+      if (timer === 0) {
+        alert('No speech detected. Please try again.');
+        return;
+      }
+
+      // Here you would typically send the audio file to a speech-to-text service
+      // For this example, we'll simulate transcription with a call to ChatGPT
+      const response = await axios.post(API_URL, {
+        messages: [
+          { role: "system", content: "You are a speech-to-text transcription service. Please transcribe the following audio content." },
+          { role: "user", content: "Transcribe this audio: [Audio content here]" }
+        ],
+        model: "gpt-4o"
+      });
+
+      const { data } = response;
+      setTranscribedText(data.response);
+    } catch (err) {
+      console.error('Failed to stop recording', err);
+      alert('Failed to transcribe audio. Please try again.');
+    }
+  }
+
+  const copyToClipboard = () => {
+    if (transcribedText) {
+      Clipboard.setString(transcribedText);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <TouchableOpacity
+        style={styles.recordButton}
+        onPressIn={startRecording}
+        onPressOut={stopRecording}
+      >
+        <Text style={styles.recordButtonText}>🎙️</Text>
+      </TouchableOpacity>
+      
+      {isRecording && (
+        <View style={styles.recordingInfo}>
+          <Text style={styles.timerText}>{timer}s</Text>
+          <View style={styles.waveform}>
+            {waveform.map((value, index) => (
+              <View 
+                key={index} 
+                style={[styles.waveformBar, { height: value * 50 }]} 
+              />
+            ))}
+          </View>
+        </View>
+      )}
+
+      <TextInput
+        style={styles.transcribedText}
+        multiline
+        value={transcribedText}
+        onChangeText={setTranscribedText}
+        placeholder="Transcribed text will appear here..."
+        placeholderTextColor="#6e6e6e"
+      />
+
+      <TouchableOpacity
+        style={styles.copyButton}
+        onPress={copyToClipboard}
+      >
+        <Text style={styles.copyButtonText}>Copy to Clipboard</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000033',
+    padding: 20,
+  },
+  recordButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#4a4a4a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  recordButtonText: {
+    fontSize: 40,
+  },
+  transcribedText: {
+    width: '100%',
+    height: 200,
+    backgroundColor: '#1a1a1a',
+    color: '#b0b0b0',
+    padding: 10,
+    borderRadius: 5,
+    marginTop: 20,
+    textAlignVertical: 'top',
+  },
+  copyButton: {
+    marginTop: 20,
+    padding: 10,
+    backgroundColor: '#4a4a4a',
+    borderRadius: 5,
+  },
+  copyButtonText: {
+    color: '#b0b0b0',
+  },
+  recordingInfo: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  timerText: {
+    color: '#b0b0b0',
+    fontSize: 18,
+    marginBottom: 10,
+  },
+  waveform: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: 50,
+  },
+  waveformBar: {
+    width: 3,
+    backgroundColor: '#ff0000',
+    marginHorizontal: 1,
+  },
+});
+
+export default App;
+// End of App.js
+```
